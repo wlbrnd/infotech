@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<title>БПЛА Симулятор — Прототип</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0e14;
+    font-family: 'Segoe UI', system-ui, sans-serif; color: #d8e0ea; }
+  #app { position: relative; width: 100vw; height: 100vh; }
+  canvas { display: block; }
+  #menu { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 50% 40%, #16212e 0%, #070a0f 100%);
+    z-index: 100; transition: opacity .6s; }
+  #menu.hidden { opacity: 0; pointer-events: none; }
+  .panel { background: rgba(20,28,38,.92); border: 1px solid #2a3a4d; border-radius: 14px;
+    padding: 32px 40px; width: 480px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+  .panel h1 { font-size: 22px; font-weight: 600; margin-bottom: 6px; color: #7fc8ff; }
+  .panel h2 { font-size: 13px; font-weight: 400; color: #7a8ba0; margin-bottom: 22px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 12px; color: #8ea3ba; margin-bottom: 6px;
+    text-transform: uppercase; letter-spacing: .5px; }
+  .field select, .field input[type=range] { width: 100%; }
+  .field select { background: #101822; color: #d8e0ea; border: 1px solid #2a3a4d;
+    border-radius: 8px; padding: 10px; font-size: 14px; outline: none; }
+  .field input[type=range] { accent-color: #3aa0ff; }
+  .btn { width: 100%; padding: 14px; margin-top: 10px; border: none; border-radius: 10px;
+    background: linear-gradient(135deg, #2a7fff, #1a5fd0); color: #fff; font-size: 15px;
+    font-weight: 600; cursor: pointer; letter-spacing: .3px; transition: .15s; }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(42,127,255,.4); }
+  #hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+  #hud .card { background: rgba(12,18,26,.78); border: 1px solid #22303f; border-radius: 10px;
+    padding: 12px 14px; backdrop-filter: blur(6px); font-size: 12px; line-height: 1.5; }
+  #telemetry { position: absolute; top: 16px; left: 16px; width: 240px; }
+  #telemetry .title, #controls .title, #weather .title { font-size: 11px; color: #4d9dff;
+    text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .trow { display: flex; justify-content: space-between; padding: 3px 0;
+    border-bottom: 1px dashed #1c2733; }
+  .trow:last-child { border-bottom: none; }
+  .trow .val { color: #7fc8ff; font-variant-numeric: tabular-nums; font-weight: 600; }
+  #controls { position: absolute; bottom: 16px; left: 16px; width: 260px; }
+  #controls kbd { display: inline-block; background: #16212e; border: 1px solid #2a3a4d;
+    border-radius: 4px; padding: 1px 6px; font-size: 11px; margin-right: 4px; color: #b8c8d8; }
+  #topright { position: absolute; top: 16px; right: 16px; display: flex; gap: 8px; pointer-events: auto; }
+  #topright button { background: rgba(12,18,26,.85); border: 1px solid #22303f; color: #b8c8d8;
+    border-radius: 8px; padding: 8px 12px; font-size: 12px; cursor: pointer; transition: .15s; }
+  #topright button:hover { background: #1a2532; color: #fff; }
+  #topright button.active { background: #2a7fff; color: #fff; border-color: #2a7fff; }
+  #weather { position: absolute; bottom: 16px; right: 16px; width: 260px; pointer-events: auto; }
+  #weather .field { margin-bottom: 10px; }
+  #weather label { font-size: 11px; color: #8ea3ba; }
+  #alerts { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    text-align: center; pointer-events: none; }
+  .alert { background: rgba(200,40,40,.9); color: #fff; padding: 14px 28px; border-radius: 10px;
+    font-size: 16px; font-weight: 600; margin-bottom: 10px;
+    box-shadow: 0 8px 30px rgba(200,40,40,.5); animation: pulse .5s ease; }
+  @keyframes pulse { 0% { transform: scale(.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="menu">
+    <div class="panel">
+      <h1>СИМУЛЯТОР БПЛА</h1>
+      <h2>Прототип полётного симулятора для беспилотных летательных аппаратов</h2>
+      <div class="field">
+        <label>Модель БПЛА</label>
+        <select id="modelSelect">
+          <option value="quadLight">Квадрокоптер «Лёгкий» (1.2 кг)</option>
+          <option value="quadHeavy">Квадрокоптер «Тяжёлый» (3.5 кг)</option>
+          <option value="quadRacing">Квадрокоптер «Гоночный» (0.8 кг)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Местность</label>
+        <select id="terrainSelect">
+          <option value="field">Полигон</option>
+          <option value="forest">Лес</option>
+          <option value="city">Город</option>
+          <option value="mountains">Горы</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Погода</label>
+        <select id="weatherSelect">
+          <option value="clear">Ясно</option>
+          <option value="rain">Дождь</option>
+          <option value="snow">Снег</option>
+          <option value="fog">Туман</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Ветер: <span id="windVal">5</span> м/с</label>
+        <input type="range" id="windRange" min="0" max="20" value="5" />
+      </div>
+      <div class="field">
+        <label>Направление ветра: <span id="windDirVal">0</span>°</label>
+        <input type="range" id="windDirRange" min="0" max="360" value="0" />
+      </div>
+      <button class="btn" id="startBtn">ЗАПУСТИТЬ СИМУЛЯЦИЮ</button>
+    </div>
+  </div>
+
+  <div id="hud">
+    <div id="telemetry" class="card">
+      <div class="title">Телеметрия</div>
+      <div class="trow"><span>Высота</span><span class="val" id="t-alt">0.0 м</span></div>
+      <div class="trow"><span>Скорость</span><span class="val" id="t-spd">0.0 м/с</span></div>
+      <div class="trow"><span>Крен</span><span class="val" id="t-roll">0°</span></div>
+      <div class="trow"><span>Тангаж</span><span class="val" id="t-pitch">0°</span></div>
+      <div class="trow"><span>Рыскание</span><span class="val" id="t-yaw">0°</span></div>
+      <div class="trow"><span>Батарея</span><span class="val" id="t-bat">100%</span></div>
+      <div class="trow"><span>Темп. двиг.</span><span class="val" id="t-temp">25°C</span></div>
+      <div class="trow"><span>GPS</span><span class="val" id="t-gps">12 SAT</span></div>
+      <div class="trow"><span>Ветер</span><span class="val" id="t-wind">5 м/с</span></div>
+    </div>
+    <div id="controls" class="card">
+      <div class="title">Управление</div>
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> — наклон</div>
+      <div><kbd>Q</kbd><kbd>E</kbd> — рыскание</div>
+      <div><kbd>Space</kbd> — вверх &nbsp; <kbd>Shift</kbd> — вниз</div>
+      <div><kbd>V</kbd> — камера &nbsp; <kbd>P</kbd> — автопилот</div>
+      <div><kbd>R</kbd> — сброс</div>
+    </div>
+    <div id="topright">
+      <button id="camBtn">КАМЕРА: TPS</button>
+      <button id="autoBtn">АВТОПИЛОТ: ВЫКЛ</button>
+      <button id="aeroBtn">АЭРО: ВЫКЛ</button>
+      <button id="reportBtn">ОТЧЁТ</button>
+    </div>
+    <div id="weather" class="card">
+      <div class="title">Погода (реальное время)</div>
+      <div class="field">
+        <label>Ветер: <span id="wWindVal">5</span> м/с</label>
+        <input type="range" id="wWindRange" min="0" max="20" value="5" />
+      </div>
+      <div class="field">
+        <label>Турбулентность: <span id="wTurbVal">0</span></label>
+        <input type="range" id="wTurbRange" min="0" max="10" value="0" />
+      </div>
+      <div class="field">
+        <label>Осадки</label>
+        <select id="wPrecSelect" style="width:100%;background:#101822;color:#d8e0ea;border:1px solid #2a3a4d;border-radius:6px;padding:6px;">
+          <option value="none">Нет</option>
+          <option value="rain">Дождь</option>
+          <option value="snow">Снег</option>
+          <option value="hail">Град</option>
+        </select>
+      </div>
+    </div>
+    <div id="alerts"></div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================
+   1. КОНФИГИ
+   ============================================================ */
+const DRONES = {
+  quadLight:  { name:'Лёгкий',  mass:1.2, armLength:0.25, maxThrustPerMotor:6.0,  dragCoeff:0.25, rotorInertia:0.02,  batteryDrainRate:0.15, color:0x3aa0ff },
+  quadHeavy:  { name:'Тяжёлый', mass:3.5, armLength:0.4,  maxThrustPerMotor:18.0, dragCoeff:0.4,  rotorInertia:0.05,  batteryDrainRate:0.12, color:0xff7a3a },
+  quadRacing: { name:'Гоночный', mass:0.8, armLength:0.18, maxThrustPerMotor:5.0,  dragCoeff:0.15, rotorInertia:0.008, batteryDrainRate:0.5,  color:0x7fff3a }
+};
+
+/* ============================================================
+   2. ФИЗИКА КВАДРОКОПТЕРА
+   ============================================================ */
+class QuadPhysics {
+  constructor(cfg) { this.cfg = cfg; this.reset(); }
+  reset() {
+    this.position = new THREE.Vector3(0, 1.5, 0);
+    this.velocity = new THREE.Vector3();
+    this.quaternion = new THREE.Quaternion();
+    this.angularVelocity = new THREE.Vector3();
+    this.motors = [0,0,0,0];
+    this.battery = 100;
+    this.motorTemp = 25;
+    this.gpsSats = 12;
+    this.time = 0;
+    this.trail = [];
+  }
+  step(dt, input, env) {
+    dt = Math.min(dt, 0.05);
+    const m = this.cfg.mass, L = this.cfg.armLength, J = this.cfg.rotorInertia;
+    const g = 9.81;
+
+    const t = Math.max(0, Math.min(1, input.thrust));
+    const p = input.pitch, r = input.roll, y = input.yaw;
+    const base = t;
+    this.motors[0] = Math.max(0, Math.min(1, base - p - r - y));
+    this.motors[1] = Math.max(0, Math.min(1, base - p + r + y));
+    this.motors[2] = Math.max(0, Math.min(1, base + p + r - y));
+    this.motors[3] = Math.max(0, Math.min(1, base + p - r + y));
+
+    const maxT = this.cfg.maxThrustPerMotor;
+    let totalThrust = 0;
+    for (let i = 0; i < 4; i++) totalThrust += this.motors[i] * maxT;
+
+    const torqueRoll  = (this.motors[1]+this.motors[2]-this.motors[0]-this.motors[3]) * maxT * L;
+    const torquePitch = (this.motors[2]+this.motors[3]-this.motors[0]-this.motors[1]) * maxT * L;
+    const torqueYaw   = (this.motors[0]+this.motors[2]-this.motors[1]-this.motors[3]) * maxT * 0.1;
+
+    const localUp = new THREE.Vector3(0,1,0).applyQuaternion(this.quaternion);
+    const thrustForce = localUp.multiplyScalar(totalThrust);
+    const gravityForce = new THREE.Vector3(0, -m*g, 0);
+
+    const speed = this.velocity.length();
+    const dragForce = this.velocity.clone().multiplyScalar(-this.cfg.dragCoeff * speed);
+
+    const relVel = this.velocity.clone().sub(env.wind);
+    const relSpeed = relVel.length();
+    const windDrag = relVel.clone().multiplyScalar(-this.cfg.dragCoeff * relSpeed);
+
+    const turb = new THREE.Vector3(
+      (Math.random()-0.5)*env.turbulence,
+      (Math.random()-0.5)*env.turbulence,
+      (Math.random()-0.5)*env.turbulence
+    );
+
+    let precipDrag = 0;
+    if (env.precip === 'rain') precipDrag = 0.15;
+    else if (env.precip === 'snow') precipDrag = 0.2;
+    else if (env.precip === 'hail') precipDrag = 0.35;
+    const precipForce = this.velocity.clone().multiplyScalar(-precipDrag * m * 0.1);
+
+    const totalForce = new THREE.Vector3()
+      .add(thrustForce).add(gravityForce).add(dragForce)
+      .add(windDrag).add(turb).add(precipForce);
+
+    const accel = totalForce.divideScalar(m);
+    this.velocity.addScaledVector(accel, dt);
+    this.position.addScaledVector(this.velocity, dt);
+
+    if (this.position.y < 0.15) {
+      this.position.y = 0.15;
+      if (this.velocity.y < 0) this.velocity.y = 0;
+      this.velocity.x *= 0.9; this.velocity.z *= 0.9;
+    }
+
+    this.angularVelocity.multiplyScalar(0.9);
+    this.angularVelocity.x += (torqueRoll  / J) * dt;
+    this.angularVelocity.y += (torqueYaw   / J) * dt;
+    this.angularVelocity.z += (torquePitch / J) * dt;
+
+    const maxAng = 6.0;
+    if (this.angularVelocity.length() > maxAng) this.angularVelocity.setLength(maxAng);
+
+    const dq = new THREE.Quaternion(
+      this.angularVelocity.x*dt*0.5, this.angularVelocity.y*dt*0.5,
+      this.angularVelocity.z*dt*0.5, 0
+    );
+    dq.multiply(this.quaternion);
+    this.quaternion.x += dq.x; this.quaternion.y += dq.y;
+    this.quaternion.z += dq.z; this.quaternion.w += dq.w;
+    this.quaternion.normalize();
+
+    const avgMotor = (this.motors[0]+this.motors[1]+this.motors[2]+this.motors[3])/4;
+    this.battery = Math.max(0, this.battery - this.cfg.batteryDrainRate * avgMotor * dt);
+
+    const targetTemp = 25 + avgMotor * 60;
+    this.motorTemp += (targetTemp - this.motorTemp) * dt * 0.5;
+
+    if (env.precip === 'hail' || env.precip === 'snow') {
+      this.gpsSats = Math.max(0, this.gpsSats - dt * 2);
+    } else if (this.battery < 10) {
+      this.gpsSats = Math.max(0, this.gpsSats - dt * 1);
+    } else {
+      this.gpsSats = Math.min(12, this.gpsSats + dt * 0.5);
+    }
+
+    this.time += dt;
+
+    // Траектория
+    if (this.time % 0.1 < dt) {
+      this.trail.push(this.position.clone());
+      if (this.trail.length > 500) this.trail.shift();
+    }
+  }
+  getEuler() {
+    const e = new THREE.Euler().setFromQuaternion(this.quaternion, 'YXZ');
+    return {
+      roll:  THREE.MathUtils.radToDeg(e.z),
+      pitch: THREE.MathUtils.radToDeg(e.x),
+      yaw:   THREE.MathUtils.radToDeg(e.y)
+    };
+  }
+}
+
+/* ============================================================
+   3. СЦЕНА
+   ============================================================ */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87a8c8);
+scene.fog = new THREE.Fog(0x87a8c8, 40, 250);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000);
+camera.position.set(6, 4, 8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.getElementById('app').appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 0.9));
+const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+sun.position.set(30, 50, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -50; sun.shadow.camera.right = 50;
+sun.shadow.camera.top = 50;   sun.shadow.camera.bottom = -50;
+scene.add(sun);
+
+// Земля
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(400, 400, 32, 32),
+  new THREE.MeshStandardMaterial({ color: 0x3a5a2a, roughness: 1 })
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const grid = new THREE.GridHelper(400, 80, 0x557755, 0x2a4a2a);
+grid.position.y = 0.01;
+scene.add(grid);
+
+/* ============================================================
+   4. БПЛА
+   ============================================================ */
+function buildDrone(cfg) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.35, 0.12, 0.35),
+    new THREE.MeshStandardMaterial({ color: 0x222831, metalness: 0.6, roughness: 0.4 })
+  );
+  body.castShadow = true;
+  group.add(body);
+
+  const plate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.28, 0.02, 0.28),
+    new THREE.MeshStandardMaterial({ color: cfg.color, emissive: cfg.color, emissiveIntensity: 0.4 })
+  );
+  plate.position.y = 0.08;
+  group.add(plate);
+
+  const L = cfg.armLength;
+  const armMat = new THREE.MeshStandardMaterial({ color: 0x11151a, metalness: 0.7, roughness: 0.3 });
+  const armPositions = [
+    new THREE.Vector3( L, 0,  L), new THREE.Vector3(-L, 0,  L),
+    new THREE.Vector3(-L, 0, -L), new THREE.Vector3( L, 0, -L)
+  ];
+  const rotors = [];
+  armPositions.forEach(pos => {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(L*1.4, 0.04, 0.05), armMat);
+    arm.position.copy(pos.clone().multiplyScalar(0.5));
+    arm.rotation.y = Math.atan2(pos.z, pos.x) - Math.PI/2;
+    arm.castShadow = true;
+    group.add(arm);
+
+    const motor = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.06, 0.08, 12),
+      new THREE.MeshStandardMaterial({ color: 0x444a55, metalness: 0.8, roughness: 0.3 })
+    );
+    motor.position.copy(pos); motor.position.y = 0.02;
+    motor.castShadow = true;
+    group.add(motor);
+
+    const rotorGroup = new THREE.Group();
+    rotorGroup.position.copy(pos); rotorGroup.position.y = 0.08;
+    const bladeMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, transparent: true, opacity: 0.75 });
+    const blade1 = new THREE.Mesh(new THREE.BoxGeometry(L*1.1, 0.008, 0.03), bladeMat);
+    const blade2 = blade1.clone(); blade2.rotation.y = Math.PI/2;
+    rotorGroup.add(blade1, blade2);
+    group.add(rotorGroup);
+    rotors.push(rotorGroup);
+  });
+
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x11151a });
+  [[-0.12,0.12],[0.12,0.12],[-0.12,-0.12],[0.12,-0.12]].forEach(([x,z]) => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,0.15,6), legMat);
+    leg.position.set(x, -0.13, z);
+    group.add(leg);
+  });
+
+  group.userData.rotors = rotors;
+  return group;
+}
+
+/* ============================================================
+   5. ОКРУЖЕНИЕ
+   ============================================================ */
+let envGroup = null;
+function buildEnvironment(type) {
+  if (envGroup) scene.remove(envGroup);
+  envGroup = new THREE.Group();
+
+  const treeMat = new THREE.MeshStandardMaterial({ color: 0x1a3a10 });
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a2a10 });
+  const buildingMat = new THREE.MeshStandardMaterial({ color: 0x3a3a4a, roughness: 0.8 });
+
+  if (type === 'forest' || type === 'mountains') {
+    for (let i = 0; i < 120; i++) {
+      const x = (Math.random()-0.5)*180, z = (Math.random()-0.5)*180;
+      if (Math.hypot(x,z) < 6) continue;
+      const h = 2 + Math.random()*3;
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.2,h*0.4,6), trunkMat);
+      trunk.position.set(x, h*0.2, z); trunk.castShadow = true; envGroup.add(trunk);
+      const crown = new THREE.Mesh(new THREE.ConeGeometry(1+Math.random(), h*0.8, 8), treeMat);
+      crown.position.set(x, h*0.6+h*0.4, z); crown.castShadow = true; envGroup.add(crown);
+    }
+  }
+  if (type === 'city') {
+    for (let i = 0; i < 40; i++) {
+      const x = (Math.random()-0.5)*160, z = (Math.random()-0.5)*160;
+      if (Math.hypot(x,z) < 10) continue;
+      const w = 3+Math.random()*6, h = 5+Math.random()*25, d = 3+Math.random()*6;
+      const b = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), buildingMat);
+      b.position.set(x, h/2, z); b.castShadow = true; b.receiveShadow = true;
+      envGroup.add(b);
+    }
+  }
+  if (type === 'mountains') {
+    for (let i = 0; i < 20; i++) {
+      const x = (Math.random()-0.5)*200, z = (Math.random()-0.5)*200;
+      if (Math.hypot(x,z) < 30) continue;
+      const h = 10+Math.random()*25;
+      const m = new THREE.Mesh(new THREE.ConeGeometry(8+Math.random()*8, h, 6),
+        new THREE.MeshStandardMaterial({ color: 0x5a5a50, flatShading: true }));
+      m.position.set(x, h/2, z); m.castShadow = true; envGroup.add(m);
+    }
+  }
+  if (type === 'field') {
+    for (let i = 0; i < 8; i++) {
+      const x = (Math.random()-0.5)*60, z = (Math.random()-0.5)*60;
+      if (Math.hypot(x,z) < 8) continue;
+      const c = new THREE.Mesh(new THREE.ConeGeometry(0.5,1,8),
+        new THREE.MeshStandardMaterial({ color: 0xff6600 }));
+      c.position.set(x, 0.5, z); c.castShadow = true; envGroup.add(c);
+    }
+  }
+  scene.add(envGroup);
+}
+
+/* ============================================================
+   6. ОСАДКИ
+   ============================================================ */
+let precipSystem = null;
+function buildPrecipitation(type) {
+  if (precipSystem) { scene.remove(precipSystem); precipSystem = null; }
+  if (type === 'none' || type === 'fog') return;
+  const count = type === 'hail' ? 800 : 2000;
+  const positions = new Float32Array(count*3);
+  const velocities = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    positions[i*3]   = (Math.random()-0.5)*100;
+    positions[i*3+1] = Math.random()*40;
+    positions[i*3+2] = (Math.random()-0.5)*100;
+    velocities[i] = 8 + Math.random()*12;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const color = type === 'snow' ? 0xffffff : (type === 'hail' ? 0xcceeff : 0x88aaff);
+  const size  = type === 'hail' ? 0.15 : (type === 'snow' ? 0.12 : 0.06);
+  precipSystem = new THREE.Points(geo,
+    new THREE.PointsMaterial({ color, size, transparent: true, opacity: 0.7 }));
+  precipSystem.userData = { velocities, type };
+  scene.add(precipSystem);
+}
+function updatePrecipitation(dt) {
+  if (!precipSystem) return;
+  const pos = precipSystem.geometry.attributes.position.array;
+  const vel = precipSystem.userData.velocities;
+  for (let i = 0; i < vel.length; i++) {
+    pos[i*3+1] -= vel[i]*dt;
+    if (precipSystem.userData.type === 'snow')
+      pos[i*3] += Math.sin(performance.now()*0.001 + i)*0.5*dt;
+    if (pos[i*3+1] < 0) {
+      pos[i*3+1] = 40;
+      pos[i*3]   = (Math.random()-0.5)*100;
+      pos[i*3+2] = (Math.random()-0.5)*100;
+    }
+  }
+  precipSystem.geometry.attributes.position.needsUpdate = true;
+}
+
+/* ============================================================
+   7. ТРАЕКТОРИЯ
+   ============================================================ */
+let trailLine = null;
+function updateTrail(trail) {
+  if (trailLine) { scene.remove(trailLine); trailLine.geometry.dispose(); }
+  if (trail.length < 2) return;
+  const geo = new THREE.BufferGeometry().setFromPoints(trail);
+  const mat = new THREE.LineBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.6 });
+  trailLine = new THREE.Line(geo, mat);
+  scene.add(trailLine);
+}
+
+/* ============================================================
+   8. ВЕКТОРЫ АЭРОДИНАМИКИ
+   ============================================================ */
+const arrowGroup = new THREE.Group();
+scene.add(arrowGroup);
+function updateAeroArrows(physics, enabled) {
+  while (arrowGroup.children.length) {
+    const c = arrowGroup.children.pop();
+    if (c.geometry) c.geometry.dispose();
+  }
+  if (!enabled) return;
+
+  const origin = physics.position.clone();
+  // Вектор скорости
+  const v = physics.velocity.clone();
+  if (v.length() > 0.5) {
+    const arrow = new THREE.ArrowHelper(v.clone().normalize(), origin, v.length()*0.3, 0x00ff00, 0.3, 0.15);
+    arrowGroup.add(arrow);
+  }
+  // Вектор ветра
+  const w = physics.__wind ? physics.__wind.clone() : new THREE.Vector3();
+  if (w.length() > 0.5) {
+    const arrow = new THREE.ArrowHelper(w.clone().normalize(), origin.clone().add(new THREE.Vector3(0,0.5,0)),
+      w.length()*0.3, 0x00aaff, 0.3, 0.15);
+    arrowGroup.add(arrow);
+  }
+  // Вектор тяги (вверх)
+  const up = new THREE.Vector3(0,1,0).applyQuaternion(physics.quaternion);
+  const arrow = new THREE.ArrowHelper(up, origin, 1, 0xffaa00, 0.25, 0.12);
+  arrowGroup.add(arrow);
+}
+
+/* ============================================================
+   9. СОСТОЯНИЕ СИМУЛЯЦИИ
+   ============================================================ */
+const state = {
+  running: false,
+  paused: false,
+  camera: 'TPS',       // TPS | FPV
+  autopilot: false,
+  aero: false,
+  drone: null,
+  physics: null,
+  cfg: DRONES.quadLight,
+  env: {
+    wind: new THREE.Vector3(),
+    turbulence: 0,
+    precip: 'none',
+    temp: 20
+  },
+  keys: {},
+  targetYaw: 0,
+  lastTime: performance.now(),
+  log: []
+};
+
+/* ============================================================
+   10. ВВОД
+   ============================================================ */
+addEventListener('keydown', e => {
+  state.keys[e.code] = true;
+  if (e.code === 'KeyV') toggleCamera();
+  if (e.code === 'KeyP') toggleAutopilot();
+  if (e.code === 'KeyR') resetSim();
+  if (e.code === 'Space') e.preventDefault();
+});
+addEventListener('keyup', e => state.keys[e.code] = false);
+
+function readInput() {
+  const k = state.keys;
+  const input = { thrust: 0, pitch: 0, roll: 0, yaw: 0 };
+
+  // Базовая тяга: чуть больше гравитации чтобы висеть
+  const hoverThrust = (state.cfg.mass * 9.81) / (4 * state.cfg.maxThrustPerMotor);
+
+  if (k['Space']) input.thrust = 1;
+  else if (k['ShiftLeft'] || k['ShiftRight']) input.thrust = 0;
+  else input.thrust = hoverThrust;
+
+  if (state.autopilot) {
+    // Автопилот: стабилизация по углам и удержание высоты
+    const euler = state.physics.getEuler();
+    input.roll  = THREE.MathUtils.clamp(-euler.roll  / 30, -1, 1);
+    input.pitch = THREE.MathUtils.clamp(-euler.pitch / 30, -1, 1);
+    input.yaw   = 0;
+    // Удержание высоты 2 м
+    const altErr = 2.0 - state.physics.position.y;
+    input.thrust = THREE.MathUtils.clamp(hoverThrust + altErr * 0.3, 0, 1);
+    // Небольшое движение вперёд при отсутствии ветра
+    if (Math.abs(euler.pitch) < 5 && Math.abs(euler.roll) < 5) {
+      input.pitch = 0.05;
+    }
+  } else {
+    if (k['KeyW']) input.pitch = -0.8;
+    if (k['KeyS']) input.pitch =  0.8;
+    if (k['KeyA']) input.roll  = -0.8;
+    if (k['KeyD']) input.roll  =  0.8;
+    if (k['KeyQ']) input.yaw   = -1;
+    if (k['KeyE']) input.yaw   =  1;
+  }
+  return input;
+}
+
+/* ============================================================
+   11. UI
+   ============================================================ */
+const ui = {
+  menu: document.getElementById('menu'),
+  startBtn: document.getElementById('startBtn'),
+  modelSelect: document.getElementById('modelSelect'),
+  terrainSelect: document.getElementById('terrainSelect'),
+  weatherSelect: document.getElementById('weatherSelect'),
+  windRange: document.getElementById('windRange'),
+  windVal: document.getElementById('windVal'),
+  windDirRange: document.getElementById('windDirRange'),
+  windDirVal: document.getElementById('windDirVal'),
+  camBtn: document.getElementById('camBtn'),
+  autoBtn: document.getElementById('autoBtn'),
+  aeroBtn: document.getElementById('aeroBtn'),
+  reportBtn: document.getElementById('reportBtn'),
+  wWindRange: document.getElementById('wWindRange'),
+  wWindVal: document.getElementById('wWindVal'),
+  wTurbRange: document.getElementById('wTurbRange'),
+  wTurbVal: document.getElementById('wTurbVal'),
+  wPrecSelect: document.getElementById('wPrecSelect'),
+  alerts: document.getElementById('alerts'),
+  t: {
+    alt: document.getElementById('t-alt'),
+    spd: document.getElementById('t-spd'),
+    roll: document.getElementById('t-roll'),
+    pitch: document.getElementById('t-pitch'),
+    yaw: document.getElementById('t-yaw'),
+    bat: document.getElementById('t-bat'),
+    temp: document.getElementById('t-temp'),
+    gps: document.getElementById('t-gps'),
+    wind: document.getElementById('t-wind')
+  }
+};
+
+ui.windRange.addEventListener('input', () => ui.windVal.textContent = ui.windRange.value);
+ui.windDirRange.addEventListener('input', () => ui.windDirVal.textContent = ui.windDirRange.value);
+ui.wWindRange.addEventListener('input', () => {
+  ui.wWindVal.textContent = ui.wWindRange.value;
+  updateWindFromUI();
+});
+ui.wTurbRange.addEventListener('input', () => {
+  ui.wTurbVal.textContent = ui.wTurbRange.value;
+  state.env.turbulence = parseFloat(ui.wTurbRange.value) * 0.5;
+});
+ui.wPrecSelect.addEventListener('change', () => {
+  state.env.precip = ui.wPrecSelect.value;
+  buildPrecipitation(state.env.precip);
+});
+
+function updateWindFromUI() {
+  const speed = parseFloat(ui.wWindRange.value);
+  const dirDeg = parseFloat(ui.windDirRange.value);
+  const dirRad = THREE.MathUtils.degToRad(dirDeg);
+  state.env.wind.set(Math.sin(dirRad) * speed, 0, Math.cos(dirRad) * speed);
+  ui.t.wind.textContent = speed.toFixed(0) + ' м/с';
+}
+
+ui.camBtn.addEventListener('click', toggleCamera);
+ui.autoBtn.addEventListener('click', toggleAutopilot);
+ui.aeroBtn.addEventListener('click', () => {
+  state.aero = !state.aero;
+  ui.aeroBtn.textContent = 'АЭРО: ' + (state.aero ? 'ВКЛ' : 'ВЫКЛ');
+  ui.aeroBtn.classList.toggle('active', state.aero);
+});
+ui.reportBtn.addEventListener('click', exportReport);
+
+ui.startBtn.addEventListener('click', () => {
+  ui.menu.classList.add('hidden');
+  startSim();
+});
+
+function toggleCamera() {
+  state.camera = state.camera === 'TPS' ? 'FPV' : 'TPS';
+  ui.camBtn.textContent = 'КАМЕРА: ' + state.camera;
+}
+function toggleAutopilot() {
+  state.autopilot = !state.autopilot;
+  ui.autoBtn.textContent = 'АВТОПИЛОТ: ' + (state.autopilot ? 'ВКЛ' : 'ВЫКЛ');
+  ui.autoBtn.classList.toggle('active', state.autopilot);
+  logEvent(state.autopilot ? 'Автопилот включён' : 'Автопилот выключен');
+}
+
+function showAlert(text) {
+  const div = document.createElement('div');
+  div.className = 'alert';
+  div.textContent = text;
+  ui.alerts.appendChild(div);
+  setTimeout(() => div.remove(), 3000);
+}
+
+function logEvent(text) {
+  state.log.push({ t: state.physics ? state.physics.time.toFixed(2) : '0', text });
+}
+
+/* ============================================================
+   12. ЗАПУСК / СБРОС
+   ============================================================ */
+function startSim() {
+  state.cfg = DRONES[ui.modelSelect.value];
+
+  // Окружение
+  buildEnvironment(ui.terrainSelect.value);
+  state.env.precip = ui.wPrecSelect.value === 'none' ? ui.weatherSelect.value : ui.wPrecSelect.value;
+  if (state.env.precip === 'clear') state.env.precip = 'none';
+  if (state.env.precip === 'fog') state.env.precip = 'none';
+  buildPrecipitation(state.env.precip);
+  state.env.turbulence = parseFloat(ui.wTurbRange.value) * 0.5;
+
+  // Ветер
+  const speed = parseFloat(ui.windRange.value);
+  const dirRad = THREE.MathUtils.degToRad(parseFloat(ui.windDirRange.value));
+  state.env.wind.set(Math.sin(dirRad)*speed, 0, Math.cos(dirRad)*speed);
+  ui.wWindRange.value = speed; ui.wWindVal.textContent = speed;
+
+  // Туман
+  if (ui.weatherSelect.value === 'fog') {
+    scene.fog = new THREE.Fog(0xaaaaaa, 10, 80);
+    scene.background = new THREE.Color(0xaaaaaa);
+  } else if (ui.weatherSelect.value === 'rain' || state.env.precip === 'rain') {
+    scene.fog = new THREE.Fog(0x556677, 30, 150);
+    scene.background = new THREE.Color(0x556677);
+  } else if (ui.weatherSelect.value === 'snow' || state.env.precip === 'snow') {
+    scene.fog = new THREE.Fog(0xccccdd, 20, 120);
+    scene.background = new THREE.Color(0xccccdd);
+  } else {
+    scene.fog = new THREE.Fog(0x87a8c8, 40, 250);
+    scene.background = new THREE.Color(0x87a8c8);
+  }
+
+  // Дрон
+  if (state.drone) scene.remove(state.drone);
+  state.drone = buildDrone(state.cfg);
+  scene.add(state.drone);
+
+  // Физика
+  state.physics = new QuadPhysics(state.cfg);
+  state.physics.__wind = state.env.wind;
+
+  state.log = [];
+  state.running = true;
+  state.lastTime = performance.now();
+
+  logEvent('Симуляция запущена');
+  logEvent('Модель: ' + state.cfg.name + ' (' + state.cfg.mass + ' кг)');
+  logEvent('Ветер: ' + speed + ' м/с, направление ' + ui.windDirRange.value + '°');
+}
+
+function resetSim() {
+  if (!state.physics) return;
+  state.physics.reset();
+  state.physics.__wind = state.env.wind;
+  logEvent('Сброс положения');
+}
+
+/* ============================================================
+   13. ЭКСПОРТ ОТЧЁТА
+   ============================================================ */
+function exportReport() {
+  if (!state.physics) return;
+  const lines = [];
+  lines.push('ОТЧЁТ О ПОЛЁТЕ');
+  lines.push('='.repeat(50));
+  lines.push('Модель: ' + state.cfg.name);
+  lines.push('Масса: ' + state.cfg.mass + ' кг');
+  lines.push('Время полёта: ' + state.physics.time.toFixed(2) + ' с');
+  lines.push('Позиция: X=' + state.physics.position.x.toFixed(2)
+    + ' Y=' + state.physics.position.y.toFixed(2)
+    + ' Z=' + state.physics.position.z.toFixed(2));
+  lines.push('Скорость: ' + state.physics.velocity.length().toFixed(2) + ' м/с');
+  lines.push('Батарея: ' + state.physics.battery.toFixed(1) + '%');
+  lines.push('Температура двигателей: ' + state.physics.motorTemp.toFixed(1) + ' °C');
+  lines.push('GPS: ' + state.physics.gpsSats.toFixed(0) + ' спутников');
+  lines.push('Ветер: ' + state.env.wind.length().toFixed(1) + ' м/с');
+  lines.push('Осадки: ' + state.env.precip);
+  lines.push('Турбулентность: ' + state.env.turbulence.toFixed(2));
+  lines.push('');
+  lines.push('ЛОГ СОБЫТИЙ:');
+  state.log.forEach(e => lines.push('  [' + e.t + ' c] ' + e.text));
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'flight_report_' + Date.now() + '.txt';
+  a.click();
+  showAlert('Отчёт сохранён');
+}
+
+/* ============================================================
+   14. ОСНОВНОЙ ЦИКЛ
+   ============================================================ */
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = Math.min((now - state.lastTime) / 1000, 0.05);
+  state.lastTime = now;
+
+  if (state.running && state.physics) {
+    // Обновляем ветер в реальном времени
+    updateWindFromUI();
+
+    const input = readInput();
+    state.physics.step(dt, input, state.env);
+
+    // Обновляем визуал
+    state.drone.position.copy(state.physics.position);
+    state.drone.quaternion.copy(state.physics.quaternion);
+
+    // Вращение пропеллеров
+    const rotors = state.drone.userData.rotors;
+    for (let i = 0; i < 4; i++) {
+      rotors[i].rotation.y += state.physics.motors[i] * 50 * dt;
+    }
+
+    // Траектория
+    updateTrail(state.physics.trail);
+
+    // Векторы
+    updateAeroArrows(state.physics, state.aero);
+
+    // Телеметрия
+    const e = state.physics.getEuler();
+    ui.t.alt.textContent   = state.physics.position.y.toFixed(1) + ' м';
+    ui.t.spd.textContent   = state.physics.velocity.length().toFixed(1) + ' м/с';
+    ui.t.roll.textContent  = e.roll.toFixed(0) + '°';
+    ui.t.pitch.textContent = e.pitch.toFixed(0) + '°';
+    ui.t.yaw.textContent   = e.yaw.toFixed(0) + '°';
+    ui.t.bat.textContent   = state.physics.battery.toFixed(0) + '%';
+    ui.t.temp.textContent  = state.physics.motorTemp.toFixed(0) + '°C';
+    ui.t.gps.textContent   = state.physics.gpsSats.toFixed(0) + ' SAT';
+    ui.t.wind.textContent  = state.env.wind.length().toFixed(1) + ' м/с';
+
+    // Предупреждения
+    if (state.physics.battery < 15 && !state.__warnBat) {
+      showAlert('⚠ НИЗКИЙ ЗАРЯД БАТАРЕИ');
+      logEvent('Низкий заряд батареи');
+      state.__warnBat = true;
+    }
+    if (state.physics.gpsSats < 4 && !state.__warnGps) {
+      showAlert('⚠ ПОТЕРЯ GPS-СИГНАЛА');
+      logEvent('Потеря GPS-сигнала');
+      state.__warnGps = true;
+    }
+    if (state.physics.motorTemp > 70 && !state.__warnTemp) {
+      showAlert('⚠ ПЕРЕГРЕВ ДВИГАТЕЛЕЙ');
+      logEvent('Перегрев двигателей');
+      state.__warnTemp = true;
+    }
+
+    // Потеря устойчивости при сильном ветре и резких манёврах
+    const speedWind = state.env.wind.length();
+    const angVel = state.physics.angularVelocity.length();
+    if (speedWind > 10 && angVel > 4 && !state.__warnStab) {
+      showAlert('⚠ ПОТЕРЯ УСТОЙЧИВОСТИ — СКОРРЕКТИРУЙТЕ УПРАВЛЕНИЕ');
+      logEvent('Потеря устойчивости');
+      state.__warnStab = true;
+      setTimeout(() => state.__warnStab = false, 4000);
+    }
+  }
+
+  // Осадки
+  updatePrecipitation(dt);
+
+  // Камера
+  if (state.physics) {
+    if (state.camera === 'TPS') {
+      // Плавное следование сзади
+      const offset = new THREE.Vector3(0, 2.5, 5).applyQuaternion(state.physics.quaternion);
+      const targetPos = state.physics.position.clone().add(offset);
+      camera.position.lerp(targetPos, 0.08);
+      camera.lookAt(state.physics.position.clone().add(new THREE.Vector3(0, 0.5, 0)));
+    } else {
+      // FPV
+      const offset = new THREE.Vector3(0, 0.15, 0.3).applyQuaternion(state.physics.quaternion);
+      camera.position.copy(state.physics.position).add(offset);
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(state.physics.quaternion);
+      camera.lookAt(camera.position.clone().add(forward));
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+/* ============================================================
+   15. RESIZE
+   ============================================================ */
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ============================================================
+   16. СТАРТ
+   ============================================================ */
+animate();
+</script>
+</body>
+</html>
